@@ -1,7 +1,7 @@
 
 workflows:
-  emis-ios-test:
-    name: EMIS iOS - Automatic Project Generation
+  emis-iphone:
+    name: EMIS - iPhone 11 IPA
     max_build_duration: 60
     instance_type: mac_mini_m2
 
@@ -23,7 +23,6 @@ workflows:
             bundleIdPrefix: com.daninramic
             deploymentTarget:
               iOS: "16.0"
-
           targets:
             EMIS:
               type: application
@@ -44,20 +43,29 @@ workflows:
 
           xcodegen generate
 
-          echo "Generated Xcode project:"
-          ls -la EMIS.xcodeproj
-
-      - name: Build EMIS for iOS Simulator
+      - name: Build for physical iPhone
         script: |
           set -e
 
           xcodebuild build \
             -project EMIS.xcodeproj \
             -scheme EMIS \
-            -sdk iphonesimulator \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -configuration Debug \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Package unsigned IPA
+        script: |
+          set -e
+
+          mkdir -p Payload
+          cp -R build/Build/Products/Debug-iphoneos/EMIS.app Payload/
+
+          mkdir -p build/ipa
+          /usr/bin/zip -r build/ipa/EMIS-unsigned.ipa Payload
+
     artifacts:
-      - build/Build/Products/Debug-iphonesimulator/*.app
+      - build/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
