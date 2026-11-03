@@ -13,32 +13,56 @@ workflows:
         script: |
           brew install xcodegen
 
+      - name: Check Swift source files
+        script: |
+          set -e
+          echo "Pronalaženje Swift fajlova:"
+          find . -type f -name "*.swift" \
+            -not -path "./.git/*" \
+            -not -path "./build/*"
+
+          if ! find . -type f -name "*.swift" \
+            -not -path "./.git/*" \
+            -not -path "./build/*" | grep -q .; then
+            echo "ERROR: Nema Swift fajlova u projektu!"
+            exit 1
+          fi
+
       - name: Generate Xcode project
         script: |
           set -e
 
           cat > project.yml <<'EOF'
           name: EMIS
+
           options:
             bundleIdPrefix: com.daninramic
             deploymentTarget:
               iOS: "16.0"
+
           targets:
             EMIS:
               type: application
               platform: iOS
+
               sources:
                 - path: .
+                  includes:
+                    - "**/*.swift"
                   excludes:
                     - "**/.git/**"
                     - "**/build/**"
                     - "**/Pods/**"
+
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.daninramic.emis
+                  PRODUCT_NAME: EMIS
                   GENERATE_INFOPLIST_FILE: YES
                   SWIFT_VERSION: "5.0"
                   TARGETED_DEVICE_FAMILY: "1,2"
+                  IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+
           EOF
 
           xcodegen generate
@@ -47,7 +71,7 @@ workflows:
         script: |
           set -e
 
-          xcodebuild build \
+          xcodebuild clean build \
             -project EMIS.xcodeproj \
             -scheme EMIS \
             -sdk iphoneos \
@@ -56,15 +80,42 @@ workflows:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Verify application executable
+        script: |
+          set -e
+
+          APP="build/Build/Products/Debug-iphoneos/EMIS.app"
+
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: EMIS.app nije pronađen!"
+            exit 1
+          fi
+
+          if [ ! -f "$APP/EMIS" ]; then
+            echo "ERROR: Nedostaje izvršna datoteka EMIS!"
+            echo "Sadržaj aplikacije:"
+            ls -la "$APP"
+            exit 1
+          fi
+
+          echo "Uspješno pronađena izvršna datoteka EMIS!"
+
       - name: Package unsigned IPA
         script: |
           set -e
 
+          rm -rf Payload
           mkdir -p Payload
+
           cp -R build/Build/Products/Debug-iphoneos/EMIS.app Payload/
 
           mkdir -p build/ipa
-          /usr/bin/zip -r build/ipa/EMIS-unsigned.ipa Payload
+
+          cd Payload/..
+          zip -qr build/ipa/EMIS-unsigned.ipa Payload
+
+          echo "IPA uspješno napravljen:"
+          ls -lh build/ipa/EMIS-unsigned.ipa
 
     artifacts:
       - build/ipa/*.ipa
