@@ -1,7 +1,7 @@
 
 workflows:
   emis-ios-test:
-    name: EMIS iOS - Test Build
+    name: EMIS iOS - Automatic Project Generation
     max_build_duration: 60
     instance_type: mac_mini_m2
 
@@ -9,52 +9,55 @@ workflows:
       xcode: latest
 
     scripts:
-      - name: Find Xcode project and scheme
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+
+      - name: Generate Xcode project
         script: |
           set -e
 
-          PROJECT=$(find "$CM_BUILD_DIR" -maxdepth 4 -name "*.xcodeproj" -print -quit)
+          cat > project.yml <<'EOF'
+          name: EMIS
+          options:
+            bundleIdPrefix: com.daninramic
+            deploymentTarget:
+              iOS: "16.0"
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: No .xcodeproj file found!"
-            exit 1
-          fi
+          targets:
+            EMIS:
+              type: application
+              platform: iOS
+              sources:
+                - path: .
+                  excludes:
+                    - "**/.git/**"
+                    - "**/build/**"
+                    - "**/Pods/**"
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.daninramic.emis
+                  GENERATE_INFOPLIST_FILE: YES
+                  SWIFT_VERSION: "5.0"
+                  TARGETED_DEVICE_FAMILY: "1,2"
+          EOF
 
-          echo "Found project: $PROJECT"
+          xcodegen generate
 
-          SCHEME=$(xcodebuild -list -json -project "$PROJECT" | python3 -c '
-          import json,sys
-          data=json.load(sys.stdin)
-          schemes=data.get("project",{}).get("schemes",[])
-          if not schemes:
-              print("ERROR: No Xcode schemes found", file=sys.stderr)
-              sys.exit(1)
-          print(schemes[0])
-          ')
-
-          echo "Found scheme: $SCHEME"
-
-          echo "$PROJECT" > /tmp/emis_project.txt
-          echo "$SCHEME" > /tmp/emis_scheme.txt
+          echo "Generated Xcode project:"
+          ls -la EMIS.xcodeproj
 
       - name: Build EMIS for iOS Simulator
         script: |
           set -e
 
-          PROJECT=$(cat /tmp/emis_project.txt)
-          SCHEME=$(cat /tmp/emis_scheme.txt)
-
           xcodebuild build \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
+            -project EMIS.xcodeproj \
+            -scheme EMIS \
             -sdk iphonesimulator \
             -configuration Debug \
-            -derivedDataPath "$CM_BUILD_DIR/build" \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
     artifacts:
       - build/Build/Products/Debug-iphonesimulator/*.app
-      - /tmp/xcodebuild_logs/*.log
-
